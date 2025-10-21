@@ -12,6 +12,8 @@ load_dotenv()
 # FastAPI app
 app = FastAPI(title="Italy Trip RAG Backend")
 
+port = int(os.getenv("PORT", 8000))
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -71,4 +73,4 @@ async def query_itinerary(request: QueryRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=port)
