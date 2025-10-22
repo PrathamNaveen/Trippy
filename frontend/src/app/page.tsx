@@ -22,7 +22,7 @@ export default function ChatPage() {
   const [activeCollection, setActiveCollection] = useState("");
   const [showUpload, setShowUpload] = useState(false);
 
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+  const baseUrl = "https://nn3b887h-8000.euw.devtunnels.ms";
 
   useEffect(() => {
     fetchCollections();
