@@ -10,8 +10,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body className="flex flex-col h-screen bg-gray-100">
-        <header className="bg-blue-600 text-white p-4 text-center font-bold">
-          Italy Trip Chat
+        <header className="bg-blue-500 text-white p-4 text-center font-bold">
+           Trippy - Your Trip Chat Companion
         </header>
         <main className="flex-1 overflow-y-auto">{children}</main>
       </body>

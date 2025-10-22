@@ -3,36 +3,61 @@ from langchain_text_splitters import CharacterTextSplitter
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 import chromadb
 
-# Embeddings model
+# Initialize embedding model
 embeddings_model = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2",
     model_kwargs={"device": "cpu"},
     encode_kwargs={"normalize_embeddings": False}
 )
 
-# 2️⃣ Initialize / connect to Chroma DB
+# Initialize / connect to Chroma DB
 client = chromadb.PersistentClient(path="./chroma_db")
-collection_name = "italy__trip_itinerary"
-
-# Create or get collection
-try:
-    collection = client.get_collection(collection_name)
-except Exception:
-    collection = client.create_collection(collection_name)
 
 
-def ingest_pdf(pdf_path_or_file) -> int:
+# -------------------------------
+# ✅ Collection management utils
+# -------------------------------
+
+def list_all_collections():
+    """Return a list of all collection names in Chroma DB."""
+    collections = client.list_collections()
+    return [c.name for c in collections]
+
+
+def get_collection(collection_name: str):
+    """Return an existing collection if found, else raise an error."""
+    existing = list_all_collections()
+    if collection_name not in existing:
+        raise ValueError(f"Collection '{collection_name}' does not exist.")
+    return client.get_collection(collection_name)
+
+
+def create_collection(collection_name: str):
+    """Create a new Chroma collection."""
+    try:
+        return client.create_collection(collection_name)
+    except Exception as e:
+        raise RuntimeError(f"Failed to create collection '{collection_name}': {e}")
+
+
+# -------------------------------
+# ✅ Core PDF and Query logic
+# -------------------------------
+
+def ingest_pdf(pdf_path_or_file, collection_name: str) -> int:
     """
-    Ingests a PDF: extracts text, splits into chunks, converts to embeddings,
-    and stores them in Chroma DB.
-    Returns the number of chunks ingested.
+    Ingest a PDF: extract text, split into chunks, embed, and store in Chroma DB.
+    If collection does not exist, create it.
     """
-    # 1️⃣ Read PDF
-    if isinstance(pdf_path_or_file, str):
-        reader = PdfReader(pdf_path_or_file)
+    # Ensure collection exists
+    existing_collections = list_all_collections()
+    if collection_name in existing_collections:
+        collection = get_collection(collection_name)
     else:
-        reader = PdfReader(pdf_path_or_file)
+        collection = create_collection(collection_name)
 
+    # Read PDF
+    reader = PdfReader(pdf_path_or_file)
     text = ""
     for page in reader.pages:
         page_text = page.extract_text()
@@ -42,7 +67,7 @@ def ingest_pdf(pdf_path_or_file) -> int:
     if not text.strip():
         raise ValueError("No text could be extracted from the PDF!")
 
-    # 2️⃣ Split into chunks (use CharacterTextSplitter)
+    # Split into chunks
     splitter = CharacterTextSplitter.from_tiktoken_encoder(
         separator="\n",
         encoding_name="cl100k_base",
@@ -51,33 +76,24 @@ def ingest_pdf(pdf_path_or_file) -> int:
     )
     chunks = splitter.split_text(text)
 
-    # 3️⃣ Embed + store each chunk
+    # Embed + store each chunk
     for i, chunk in enumerate(chunks):
         vector = embeddings_model.embed_query(chunk)
-        collection.add(ids=[f"chunk_{i}"], documents=[chunk], embeddings=[vector])
+        collection.add(ids=[f"{collection_name}_chunk_{i}"], documents=[chunk], embeddings=[vector])
 
-    print(f"✅ PDF ingested successfully with {len(chunks)} chunks!")
+    print(f"✅ PDF ingested into '{collection_name}' with {len(chunks)} chunks!")
     return len(chunks)
 
 
-def query_vector_db(query_text: str, top_k: int = 1):
-    """
-    Queries the Chroma vector DB and returns the most relevant chunk(s).
-    """
+def query_vector_db(query_text: str, collection_name: str, top_k: int = 3):
+    """Queries an existing Chroma collection for relevant chunks."""
+    collection = get_collection(collection_name)
     query_vector = embeddings_model.embed_query(query_text)
     results = collection.query(query_embeddings=[query_vector], n_results=top_k)
 
-    print(f"✅ Retrieved {len(results['documents'][0])} relevant chunk(s) from vector DB.")
-    
     if not results or "documents" not in results or not results["documents"]:
+        print(f"⚠️ No relevant chunks found in '{collection_name}'.")
         return []
 
+    print(f"✅ Retrieved {len(results['documents'][0])} chunks from '{collection_name}' collection.")
     return results["documents"][0]
-
-if __name__ == "__main__":
-    # Example usage
-    pdf_path = "./itineraries/italy_trip_itinerary.pdf"
-    ingest_pdf(pdf_path)
-    query = "What are the top attractions in Rome?"
-    relevant_chunks = query_vector_db(query, top_k=2)
-    print("Relevant Chunks:", relevant_chunks)
