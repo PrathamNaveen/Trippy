@@ -22,8 +22,7 @@ export default function ChatPage() {
   const [activeCollection, setActiveCollection] = useState("");
   const [showUpload, setShowUpload] = useState(false);
 
-  const baseUrl = "https://nn3b887h-8000.euw.devtunnels.ms";
-
+  const baseUrl = "http://localhost:8000";
   useEffect(() => {
     fetchCollections();
   }, []);
