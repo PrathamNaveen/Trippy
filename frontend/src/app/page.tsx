@@ -1,7 +1,7 @@
-'use client';
+'use client'
 
 import { useState, useEffect } from "react";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { AnimatePresence } from "framer-motion";
 
 import ChatWindow from "./components/ChatWindow";
@@ -9,7 +9,6 @@ import ChatInput from "./components/ChatInput";
 import CollectionSelector from "./components/CollectionSelector";
 import UploadModal from "./components/UploadModal";
 import AuthPage from "./components/Auth";
-import { head } from "framer-motion/client";
 
 type Message = {
   role: "user" | "assistant";
@@ -30,30 +29,43 @@ export default function ChatPage() {
   // Check if user is already logged in
   useEffect(() => {
     const storedSession = localStorage.getItem("session_id");
-    if (storedSession) {
-      setSessionId(storedSession);
-    }
+    if (storedSession) setSessionId(storedSession);
   }, []);
 
+  // Fetch collections whenever sessionId changes
   useEffect(() => {
-    if (sessionId) {
-      fetchCollections();
-    }
+    if (sessionId) fetchCollections();
   }, [sessionId]);
 
+  // Helper to handle 401 (session expired)
+  const handleSessionExpired = () => {
+    localStorage.removeItem("session_id");
+    setSessionId(null);
+    alert("Session expired. Please log in again.");
+    return <AuthPage onLogin={handleLogin} />;
+  };
+  
+  // Fetch collections
   const fetchCollections = async () => {
+    if (!sessionId) return;
     try {
       const res = await axios.get(`${baseUrl}/list_collections`, {
-        headers: { "session_id": sessionId }
+        headers: { "session_id": sessionId },
       });
       setCollections(res.data.collections || []);
-    } catch (err) {
-      console.error(err);
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        handleSessionExpired();
+      } else {
+        console.error(err);
+      }
     }
   };
 
+  // Send message to backend
   const sendMessage = async () => {
-    if (!input.trim() || !activeCollection) return;
+    if (!input.trim() || !activeCollection || !sessionId) return;
+
     const userMessage: Message = { role: "user", content: input };
     setMessages(prev => [...prev, userMessage]);
     setInput("");
@@ -62,21 +74,25 @@ export default function ChatPage() {
     try {
       const res = await axios.post(
         `${baseUrl}/query`,
-        {
-          question: input,
-          collection_name: activeCollection,
-        },
-        {
-          headers: { "session_id": sessionId }
-        }
+        { question: input, collection_name: activeCollection },
+        { headers: { "session_id": sessionId } }
       );
+
       const aiMessage: Message = {
         role: "assistant",
         content: res.data.answer || res.data.error || "No answer",
       };
       setMessages(prev => [...prev, aiMessage]);
-    } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "Error contacting backend" }]);
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        handleSessionExpired();
+      } else {
+        console.error(err);
+        setMessages(prev => [
+          ...prev,
+          { role: "assistant", content: "Error contacting backend" },
+        ]);
+      }
     } finally {
       setLoading(false);
     }
@@ -88,10 +104,8 @@ export default function ChatPage() {
     localStorage.setItem("session_id", newSessionId);
   };
 
-  // If not logged in, show AuthPage
-  if (!sessionId) {
-    return <AuthPage onLogin={handleLogin} />;
-  }
+  // Not logged in → show AuthPage
+  if (!sessionId) return <AuthPage onLogin={handleLogin} />;
 
   // Logged in → show chat UI
   return (
@@ -123,7 +137,11 @@ export default function ChatPage() {
         onChange={setInput}
         onSend={sendMessage}
         disabled={!activeCollection}
-        placeholder={activeCollection ? `Ask about ${activeCollection}...` : "Select a collection first..."}
+        placeholder={
+          activeCollection
+            ? `Ask about ${activeCollection}...`
+            : "Select a collection first..."
+        }
       />
 
       <AnimatePresence>
@@ -132,6 +150,8 @@ export default function ChatPage() {
             onClose={() => setShowUpload(false)}
             onUploaded={fetchCollections}
             baseUrl={baseUrl}
+            sessionId={sessionId}
+            onSessionExpired={handleSessionExpired}
           />
         )}
       </AnimatePresence>

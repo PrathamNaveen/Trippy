@@ -2,16 +2,24 @@
 
 import { useState, ChangeEvent } from "react";
 import { motion } from "framer-motion";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { isValidCollectionName } from "../utils/validation";
 
 interface Props {
   onClose: () => void;
   onUploaded: () => void;
   baseUrl: string;
+  sessionId: string;
+  onSessionExpired: () => void; // callback to handle session expiration in parent
 }
 
-export default function UploadModal({ onClose, onUploaded, baseUrl }: Props) {
+export default function UploadModal({
+  onClose,
+  onUploaded,
+  baseUrl,
+  sessionId,
+  onSessionExpired,
+}: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [collectionName, setCollectionName] = useState<string>("");
   const [status, setStatus] = useState<string>("");
@@ -24,13 +32,12 @@ export default function UploadModal({ onClose, onUploaded, baseUrl }: Props) {
 
   const handleUpload = async () => {
     if (!file) return setStatus("⚠️ Please select a PDF first.");
-    console.log(`Uploading ${file.name} to ${collectionName}`);
-    // Check validity instead of sanitizing
-    // if (!isValidCollectionName(collectionName)) {
-    //   return setStatus(
-    //     "❌ Invalid collection name! Must be 3-512 characters, only letters, numbers, dot, underscore or hyphen, starting & ending with a letter/number."
-    //   );
-    // }
+
+    if (!isValidCollectionName(collectionName)) {
+      return setStatus(
+        "❌ Invalid collection name! Must be 3-512 characters, only letters, numbers, dot, underscore or hyphen, starting & ending with a letter/number."
+      );
+    }
 
     const formData = new FormData();
     formData.append("file", file);
@@ -39,13 +46,22 @@ export default function UploadModal({ onClose, onUploaded, baseUrl }: Props) {
     setStatus("⏳ Uploading...");
     try {
       const res = await axios.post(`${baseUrl}/upload_pdf`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: {
+          "Content-Type": "multipart/form-data",
+          "session_id": sessionId,
+        },
       });
       setStatus(`✅ ${res.data.message}`);
       onUploaded();
       setTimeout(onClose, 1000);
-    } catch (err) {
-      console.error(err);
+    } catch (err: unknown) {
+      const axiosErr = err as AxiosError;
+      if (axiosErr.response?.status === 401) {
+        setStatus("❌ Session expired. Please log in again.");
+        onSessionExpired(); // notify parent to show login page
+        return;
+      }
+      console.error(axiosErr);
       setStatus("❌ Error uploading file.");
     }
   };
