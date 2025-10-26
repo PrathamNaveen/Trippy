@@ -1,10 +1,11 @@
-from fastapi import FastAPI, UploadFile, File, Query, Form
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header
 from pydantic import BaseModel
 from groq import Groq
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from pdf_ingestion import ingest_pdf, query_vector_db, list_all_collections
+from auth import create_session, get_session, get_all_session
 
 # Load environment
 load_dotenv()
@@ -35,6 +36,18 @@ class QueryRequest(BaseModel):
 
 
 # -------------------------------
+# ✅ Session Dependency
+# -------------------------------
+def validate_session(session_id: str = Header(..., alias="session_id")):
+    user = get_session(session_id)
+    if user == 401:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if user is None:
+        raise HTTPException(status_code=401, detail="Session Invalid or Expired")
+    print("Authenticated user:", user)
+    return user  # Injected into the endpoint
+
+# -------------------------------
 # ✅ Routes
 # -------------------------------
 
@@ -43,8 +56,28 @@ async def root():
     return {"message": "Multi-RAG Backend is running!"}
 
 
+@app.post("/create_session")
+async def create_user_session(username: str = Form(...), password: str = Form(...)):
+    try:
+        session_id = create_session(username, password)
+        return {"session_id": session_id}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/session/{session_id}")
+async def get_user_session(session_id: str):
+    try:
+        response = get_session(session_id)
+        if response == 401:
+            return {"error": "Unauthorized"}
+        return {"session_data": response}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/list_collections")
-async def list_collections():
+async def list_collections(user: str = Depends(validate_session)):
     """Get all collections stored in Chroma DB."""
     try:
         collections = list_all_collections()
@@ -56,24 +89,26 @@ async def list_collections():
 @app.post("/upload_pdf")
 async def upload_pdf(
     file: UploadFile = File(...),
-    collection_name: str = Form(None)  # read collection_name from FormData
+    collection_name: str = Form(None),  # read collection_name from FormData
+    user: str = Depends(validate_session)  # session validated
 ):
     try:
         # If collection_name not provided, use file name (without extension)
         collection = collection_name or file.filename.rsplit(".", 1)[0]
-
         print("Collection Name: ", collection)
 
         # Ingest PDF into the specified collection
         num_chunks = ingest_pdf(file.file, collection_name=collection)
-
         return {"message": f"✅ PDF ingested into '{collection}' with {num_chunks} chunks!"}
     except Exception as e:
         return {"error": str(e)}
 
 
 @app.post("/query")
-async def query_itinerary(request: QueryRequest):
+async def query_itinerary(
+    request: QueryRequest,
+    user: str = Depends(validate_session)  # session validated
+):
     """Query a specific collection."""
     try:
         relevant_chunks = query_vector_db(request.question, collection_name=request.collection_name, top_k=3)

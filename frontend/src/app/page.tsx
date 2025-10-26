@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import axios from "axios";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 
 import ChatWindow from "./components/ChatWindow";
 import ChatInput from "./components/ChatInput";
 import CollectionSelector from "./components/CollectionSelector";
 import UploadModal from "./components/UploadModal";
+import AuthPage from "./components/Auth";
+import { head } from "framer-motion/client";
 
 type Message = {
   role: "user" | "assistant";
@@ -21,15 +23,29 @@ export default function ChatPage() {
   const [collections, setCollections] = useState<string[]>([]);
   const [activeCollection, setActiveCollection] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const baseUrl = "http://localhost:8000";
+
+  // Check if user is already logged in
   useEffect(() => {
-    fetchCollections();
+    const storedSession = localStorage.getItem("session_id");
+    if (storedSession) {
+      setSessionId(storedSession);
+    }
   }, []);
+
+  useEffect(() => {
+    if (sessionId) {
+      fetchCollections();
+    }
+  }, [sessionId]);
 
   const fetchCollections = async () => {
     try {
-      const res = await axios.get(`${baseUrl}/list_collections`);
+      const res = await axios.get(`${baseUrl}/list_collections`, {
+        headers: { "session_id": sessionId }
+      });
       setCollections(res.data.collections || []);
     } catch (err) {
       console.error(err);
@@ -44,10 +60,16 @@ export default function ChatPage() {
     setLoading(true);
 
     try {
-      const res = await axios.post(`${baseUrl}/query`, {
-        question: input,
-        collection_name: activeCollection,
-      });
+      const res = await axios.post(
+        `${baseUrl}/query`,
+        {
+          question: input,
+          collection_name: activeCollection,
+        },
+        {
+          headers: { "session_id": sessionId }
+        }
+      );
       const aiMessage: Message = {
         role: "assistant",
         content: res.data.answer || res.data.error || "No answer",
@@ -60,6 +82,18 @@ export default function ChatPage() {
     }
   };
 
+  // Handle login from AuthPage
+  const handleLogin = (newSessionId: string) => {
+    setSessionId(newSessionId);
+    localStorage.setItem("session_id", newSessionId);
+  };
+
+  // If not logged in, show AuthPage
+  if (!sessionId) {
+    return <AuthPage onLogin={handleLogin} />;
+  }
+
+  // Logged in → show chat UI
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-gray-100">
       {/* Top bar: selector + upload */}
