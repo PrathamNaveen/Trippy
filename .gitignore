@@ -5,3 +5,5 @@ node_modules/
 backend/myenv/
 backend/chroma_db/
 backend/itineraries/
+backend/**/__pycache__/
+backend/.pytest_cache/
