@@ -51,9 +51,9 @@ def validate_session(session_id: str = Header(..., alias="session_id")):
 # ✅ Routes
 # -------------------------------
 
-@app.get("/")
-async def root():
-    return {"message": "Multi-RAG Backend is running!"}
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
 
 
 @app.post("/create_session")
