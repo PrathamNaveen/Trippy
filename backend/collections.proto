@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+service CollectionService {
+    rpc DeleteCollection (DeleteCollectionRequest) returns (DeleteCollectionResponse);
+}
+
+message DeleteCollectionRequest {
+    string collection_name = 1;
+}
+
+message DeleteCollectionResponse {
+    repeated string remaining_collections = 1;
+}
